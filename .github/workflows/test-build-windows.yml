@@ -1,0 +1,43 @@
+name: Test build (Windows, unsigned)
+
+# Fork-only test build of the current branch; not part of the upstream PR.
+on:
+  push:
+    branches: [ci/windows-test-build]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build bundled Python environment
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/build-python-env.ps1 -PypiMirror https://pypi.org/simple
+
+      # No signing key on the fork: skip updater artifacts, build the NSIS installer only.
+      - name: Build Tauri app
+        shell: bash
+        run: |
+          echo '{"bundle":{"createUpdaterArtifacts":false}}' > ci-no-updater.json
+          npm run tauri:build -- --config ci-no-updater.json --bundles nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mason-windows-test
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
